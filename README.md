@@ -107,11 +107,18 @@ PCB(Printed Circuit Board) 제조 공정에서 발생하는 다양한 결함을 
 
 ```
 dataset/
-├── raw/              # 원본 Kaggle 데이터
-├── processed/        # 전처리된 데이터
-├── train/           # 학습 데이터
-├── val/             # 검증 데이터
-└── test/            # 테스트 데이터
+├── raw/                    # 원본 Kaggle 데이터
+│   ├── train/             # 원본 학습 데이터
+│   │   ├── images/
+│   │   └── labels/
+│   ├── val/               # 원본 검증 데이터
+│   │   ├── images/
+│   │   └── labels/
+│   ├── test/              # 원본 테스트 데이터
+│   │   ├── images/
+│   │   └── labels/
+│   └── data.yaml          # YOLO 데이터셋 설정
+└── aug/                    # 증강된 데이터 (Data Augmentation)
 ```
 
 <br>
@@ -130,7 +137,7 @@ dataset/
 ### 1. 저장소 클론
 
 ```bash
-git clone https://github.com/your-username/PCB.git
+git clone https://github.com/PCB-object-detection/PCB.git
 cd PCB
 ```
 
@@ -150,8 +157,8 @@ uv sync
 # Kaggle API 토큰 설정 (~/.kaggle/kaggle.json)
 # https://www.kaggle.com/settings/account 에서 API 토큰 생성
 
-# 데이터셋 다운로드
-kaggle datasets download -d norbertelter/pcb-defect-dataset -p dataset/raw --unzip
+# 데이터셋 다운로드 (자동으로 dataset/raw/에 저장됨)
+python scripts/download_kaggle.py
 ```
 
 <br>
@@ -199,11 +206,12 @@ streamlit run streamlit_app/app.py
 ```
 PCB/
 ├── dataset/              # 데이터셋
-│   ├── raw/             # 원본 데이터
-│   ├── processed/       # 전처리 데이터
-│   ├── train/           # 학습 데이터
-│   ├── val/             # 검증 데이터
-│   └── test/            # 테스트 데이터
+│   ├── raw/             # 원본 Kaggle 데이터
+│   │   ├── train/      # 학습 데이터 (images, labels)
+│   │   ├── val/        # 검증 데이터
+│   │   ├── test/       # 테스트 데이터
+│   │   └── data.yaml
+│   └── aug/             # 증강된 데이터
 │
 ├── src/                 # 소스 코드
 │   ├── data/           # 데이터 로딩/전처리
@@ -213,6 +221,7 @@ PCB/
 │   ├── inference/      # 추론 스크립트
 │   └── utils/          # 유틸리티 함수
 │
+├── scripts/            # 유틸리티 스크립트
 ├── notebooks/          # Jupyter 노트북
 ├── configs/            # 설정 파일
 ├── weights/            # 모델 가중치
