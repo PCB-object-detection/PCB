@@ -30,8 +30,9 @@ share/python-wheels/
 # PyCharm
 .idea/
 
-# VSCode
+# VSCode & claude
 .vscode/
+.claude/
 
 # macOS
 .DS_Store
