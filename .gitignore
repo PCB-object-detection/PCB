@@ -1,0 +1,75 @@
+# Python
+.venv
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+
+# PyCharm
+.idea/
+
+# VSCode
+.vscode/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# 데이터셋 (큰 파일들)
+dataset/raw/*
+dataset/processed/*
+dataset/train/*
+dataset/val/*
+dataset/test/*
+!dataset/*/.gitkeep
+
+# 모델 가중치 및 체크포인트
+weights/
+onnx_models/
+
+# 학습 로그 및 출력
+outputs/
+runs/
+logs/
+*.log
+wandb/
+
+# 캐시
+*.cache
+.cache/
+
+# 환경 변수
+.env
+.env.local
+
+# Kaggle API
+kaggle.json
+
+# 임시 파일
+*.tmp
+*.bak
+*.swp
+*~
