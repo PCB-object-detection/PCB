@@ -40,12 +40,7 @@ share/python-wheels/
 .LSOverride
 
 # 데이터셋 (큰 파일들)
-dataset/raw/*
-dataset/train/*
-dataset/val/*
-dataset/test/*
-!dataset/*/.gitkeep
-dataset/aug/*
+dataset/*
 
 # 모델 가중치 및 체크포인트
 weights/
