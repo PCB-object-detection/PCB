@@ -2,19 +2,19 @@
 
 # 모델 설정
 model:
-  type: yolov11s     # yolov5, yolov8, yolov11
+  type: yolov8     # yolov5, yolov8, yolov11
   size: s           # n, s, m, l
   pretrained: true
 
 # 데이터셋 설정
 data:
-  data_yaml: dataset/raw/data.yaml
+  data_yaml: dataset/roboflow/data.yaml
   img_size: 600
 
 # 학습 설정
 training:
-  epochs: 30 # baseline: 30
-  batch_size: 16
+  epochs: 100 # baseline: 30
+  batch_size: 32 # baseline: 16
   device: cuda      # cuda, cpu, 0, 1, 2, 3
   workers: 8
 
@@ -29,7 +29,7 @@ training:
   patience: 10
 
   # 저장 설정
-  save_period: # 10   # N epoch마다 저장
+  save_period: -1     # N epoch마다 저장 (-1은 저장 안함, 숫자는 해당 epoch마다 저장)
   save_dir: outputs
 
 # 데이터 증강
@@ -49,9 +49,9 @@ augmentation:
 wandb:
   enabled: true     # wandb 사용 여부
   project: PCB_Detection
-  name: yolo_V11_s-base
+  suffix: roboflow_base      # run name의 뒷부분 (앞에는 자동으로 모델명이 붙음)
 
 # 실험 설정
 experiment:
-  name: yolo_V11_s-base
+  suffix: roboflow_base  # 실험명 suffix (앞에는 자동으로 모델명이 붙음)
   seed: 42
