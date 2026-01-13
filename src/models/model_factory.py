@@ -160,13 +160,10 @@ class ModelFactory:
                 logger.info(f"Found weights (alternative name): {alt_weights_path}")
                 return str(alt_weights_path)
 
-            # 둘 다 없으면 원래 경로 반환 (에러 발생하도록)
-            logger.error(f"Weights not found: tried {weights_path} and {alt_weights_path}")
-            raise FileNotFoundError(
-                f"Model weights not found in weights/ folder.\n"
-                f"Tried: {model_name} and {alt_model_name}\n"
-                f"Please download the model to weights/ folder."
-            )
+            # 둘 다 없으면 모델 이름만 반환 (YOLO가 자동 다운로드)
+            logger.warning(f"Weights not found in weights/ folder: {model_name}")
+            logger.info(f"Will download from Ultralytics hub automatically...")
+            return model_name
         else:
             return f"{model_type}{size}.yaml"
 
