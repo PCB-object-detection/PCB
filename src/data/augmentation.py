@@ -2,7 +2,9 @@ import logging
 from typing import Dict, Any, Optional, List, Union
 from pathlib import Path
 import albumentations as A
+from albumentations.core.transforms_interface import DualTransform
 import cv2
+import numpy as np
 
 from src.utils.config import load_config
 from src.utils.utils import setup_logger, get_device
@@ -18,6 +20,47 @@ CLASS_NAMES = {
     4: "open_circuit",
     5: "spurious_copper"
 }
+
+
+class ConditionalResize(DualTransform):
+    """
+    조건부 Resize Transform
+    원본 이미지 크기가 target size와 같으면 resize를 건너뜁니다.
+    """
+
+    def __init__(self, height: int, width: int, always_apply: bool = False, p: float = 1.0):
+        super().__init__(always_apply, p)
+        self.height = height
+        self.width = width
+
+    def apply(self, img: np.ndarray, **params) -> np.ndarray:
+        """이미지에 적용"""
+        h, w = img.shape[:2]
+
+        # 크기가 같으면 resize 건너뛰기
+        if h == self.height and w == self.width:
+            logger.debug(f"Image size matches target ({h}x{w}), skipping resize")
+            return img
+
+        # 크기가 다르면 resize 수행
+        logger.debug(f"Resizing image from {h}x{w} to {self.height}x{self.width}")
+        return cv2.resize(img, (self.width, self.height), interpolation=cv2.INTER_LINEAR)
+
+    def apply_to_bbox(self, bbox, **params):
+        """bbox에 적용 (크기 변경 시에만 스케일 조정)"""
+        h, w = params['rows'], params['cols']
+
+        # 크기가 같으면 bbox도 그대로 반환
+        if h == self.height and w == self.width:
+            return bbox
+
+        # 크기가 다르면 bbox 스케일 조정
+        # YOLO format: [x_center, y_center, width, height] (normalized)
+        # Albumentations는 이미 normalized 좌표를 다루므로 그대로 반환
+        return bbox
+
+    def get_transform_init_args_names(self):
+        return ("height", "width")
 
 
 def get_augmentation_config(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -114,8 +157,8 @@ def get_train_transforms(
                 p=0.2  # 낮은 확률
             ),
 
-            # 10. 리사이즈 (항상 적용)
-            A.Resize(height=img_size, width=img_size, p=1.0),
+            # 10. 리사이즈 (조건부 - 크기가 같으면 건너뜀)
+            ConditionalResize(height=img_size, width=img_size, p=1.0),
         ]
     else:
         # 기존 범용 augmentation
@@ -156,7 +199,7 @@ def get_train_transforms(
                 contrast_limit=0.2,
                 p=0.3
             ),
-            A.Resize(height=img_size, width=img_size, p=1.0),
+            ConditionalResize(height=img_size, width=img_size, p=1.0),
         ]
 
     # bbox_params 설정 (YOLO 형식)
@@ -174,8 +217,8 @@ def get_val_transforms(img_size: int = 640) -> A.Compose:
     logger.info(f"Creating validation transforms with img_size={img_size}")
 
     transforms = [
-        # 리사이즈만 수행
-        A.Resize(height=img_size, width=img_size, p=1.0),
+        # 조건부 리사이즈 (크기가 같으면 건너뜀)
+        ConditionalResize(height=img_size, width=img_size, p=1.0),
     ]
 
     # bbox_params 설정 (YOLO 형식)
