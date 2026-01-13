@@ -15,6 +15,7 @@ class ModelFactory:
         'yolov5': ['n', 's', 'm', 'l'],
         'yolov8': ['n', 's', 'm', 'l'],
         'yolov11': ['n', 's', 'm', 'l'],
+        'yolo11': ['n', 's', 'm', 'l'],  # v 없는 버전
     }
 
     @classmethod
@@ -52,6 +53,7 @@ class ModelFactory:
         # 모델 생성
         model_name = cls._get_model_name(model_type, size, pretrained)
         logger.info(f"Creating {model_type.upper()}{size.upper()} model...")
+        logger.info(f"Loading model from: {model_name}")
 
         try:
             model = YOLO(model_name)
@@ -97,13 +99,74 @@ class ModelFactory:
             )
 
     @classmethod
+    def _download_to_weights(cls, model_type: str, size: str) -> None:
+        """weights 폴더에 모델 다운로드"""
+        import shutil
+        import os
+        import tempfile
+
+        model_name = f"{model_type}{size}.pt"
+        weights_dir = Path("weights")
+        weights_dir.mkdir(parents=True, exist_ok=True)
+        weights_path = weights_dir / model_name
+
+        logger.info(f"Downloading {model_name} to {weights_dir}/")
+
+        # 임시 디렉토리에 다운로드 후 복사
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_dir = os.getcwd()
+            os.chdir(temp_dir)
+
+            try:
+                # YOLO가 임시 디렉토리에 다운로드
+                logger.info(f"Downloading to temporary directory: {temp_dir}")
+                temp_model = YOLO(model_name)
+
+                # 다운로드된 파일을 weights 폴더로 복사
+                temp_file = Path(temp_dir) / model_name
+                if temp_file.exists():
+                    shutil.copy2(temp_file, weights_path)
+                    logger.info(f"Successfully downloaded and copied to {weights_path}")
+                else:
+                    raise FileNotFoundError(f"Downloaded file not found in {temp_dir}")
+            finally:
+                os.chdir(original_dir)
+
+    @classmethod
     def _get_model_name(cls, model_type: str, size: str, pretrained: bool) -> str:
         """모델 이름 생성"""
         model_type = model_type.lower()
         size = size.lower()
 
         if pretrained:
-            return f"{model_type}{size}.pt"
+            model_name = f"{model_type}{size}.pt"
+            weights_path = Path("weights") / model_name
+
+            # weights 폴더에서 파일 찾기 (v 있는 버전, 없는 버전 모두 시도)
+            if weights_path.exists():
+                logger.info(f"Found weights: {weights_path}")
+                return str(weights_path)
+
+            # yolov11 → yolo11 또는 yolo11 → yolov11 시도
+            if model_type.startswith("yolov"):
+                alt_model_type = model_type.replace("yolov", "yolo")
+            else:
+                alt_model_type = model_type.replace("yolo", "yolov")
+
+            alt_model_name = f"{alt_model_type}{size}.pt"
+            alt_weights_path = Path("weights") / alt_model_name
+
+            if alt_weights_path.exists():
+                logger.info(f"Found weights (alternative name): {alt_weights_path}")
+                return str(alt_weights_path)
+
+            # 둘 다 없으면 원래 경로 반환 (에러 발생하도록)
+            logger.error(f"Weights not found: tried {weights_path} and {alt_weights_path}")
+            raise FileNotFoundError(
+                f"Model weights not found in weights/ folder.\n"
+                f"Tried: {model_name} and {alt_model_name}\n"
+                f"Please download the model to weights/ folder."
+            )
         else:
             return f"{model_type}{size}.yaml"
 
