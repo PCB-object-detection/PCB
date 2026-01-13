@@ -2,19 +2,19 @@
 
 # 모델 설정
 model:
-  type: yolov8     # yolov5, yolov8, yolov11
-  size: s           # n, s, m, l
+  type: yolo11     # yolov5, yolov8, yolov11
+  size: l           # n, s, m, l
   pretrained: true
 
 # 데이터셋 설정
 data:
   data_yaml: dataset/roboflow/data.yaml
-  img_size: 600
+  img_size: 640
 
 # 학습 설정
 training:
   epochs: 100 # baseline: 30
-  batch_size: 32 # baseline: 16
+  batch_size: 32 # baseline: 16ㄴ
   device: cuda      # cuda, cpu, 0, 1, 2, 3
   workers: 8
 

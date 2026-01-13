@@ -59,6 +59,16 @@ def train_model(config_path: str = "configs/train_config.yaml") -> Dict[str, Any
     device = get_device(verbose=False)
     logger.info(f"Using device: {device}")
 
+    # GPU 모델명 가져오기
+    gpu_name = "CPU"
+    if torch.cuda.is_available():
+        try:
+            gpu_name = torch.cuda.get_device_name(0)
+            logger.info(f"GPU: {gpu_name}")
+        except Exception as e:
+            logger.warning(f"Failed to get GPU name: {e}")
+            gpu_name = "Unknown GPU"
+
     # 모델 생성
     logger.info(f"Creating model: {model_cfg['type']}{model_cfg['size']}")
     model = ModelFactory.create_model(
@@ -99,6 +109,7 @@ def train_model(config_path: str = "configs/train_config.yaml") -> Dict[str, Any
             'img_size': data_cfg['img_size'],
             'patience': train_cfg.get('patience', 10),
             'device': str(device),
+            'gpu_name': gpu_name,
             'workers': train_cfg.get('workers', 8),
 
             # Training - Optimizer
