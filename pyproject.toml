@@ -1,31 +1,35 @@
 [project]
 name = "pcb"
 version = "0.1.0"
-description = "Add your description here"
+description = "PCB Defect Detection System"
 readme = "README.md"
-requires-python = ">=3.12"
+# Python 버전을 3.12로 확실히 고정해서 3.13+와의 충돌 방지
+requires-python = ">=3.12,<3.13" 
+
 dependencies = [
     "albumentations>=2.0.8",
-    "font-manager>=0.1.0",
     "fpdf>=1.7.2",
     "gradio>=6.3.0",
     "ipykernel>=7.1.0",
     "jupyter>=1.1.1",
     "kaggle>=1.8.3",
     "kagglehub>=0.4.0",
-    "numpy>=2.4.1",
-    "onnx>=1.20.1",
-    "onnxruntime>=1.23.2",
-    "opencv-python>=4.11.0.86",
-    "pandas>=2.3.3",
-    "pillow>=12.1.0",
-    "python-dotenv>=1.2.1",
-    "scikit-learn>=1.8.0",
-    "seaborn>=0.13.2",
-    "streamlit>=1.52.2",
-    "torch>=2.9.1",
-    "torchvision>=0.24.1",
-    "tqdm>=4.67.1",
-    "ultralytics>=8.3.252",
-    "wandb>=0.24.0",
+    "numpy>=1.26.0,<2.1.0",   # Numpy 범위를 조금 더 넓힘
+    "onnx>=1.16.0,<1.20.0",   # onnx 버전을 살짝 낮춰서 Numpy 1.x를 허용
+    "onnxruntime>=1.19.0",
+    "opencv-python>=4.10.0",
+    "pandas>=2.2.0",
+    "pillow>=10.0.0",
+    "python-dotenv>=1.0.0",
+    "scikit-learn>=1.5.0",
+    "seaborn>=0.13.0",
+    "streamlit>=1.40.0",
+    "torch>=2.4.0",
+    "torchvision>=0.19.0",
+    "tqdm>=4.66.0",
+    "ultralytics>=8.3.0",
+    "wandb>=0.17.0",
+    "sahi>=0.11.19",
+    "pycocotools>=2.0.7",
+    "font-manager>=0.1.0",
 ]
