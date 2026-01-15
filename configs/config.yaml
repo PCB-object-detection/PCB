@@ -1,0 +1,51 @@
+# 모델 설정
+model:
+  type: yolo11     # yolov5, yolov8, yolov11
+  size: m           # n, s, m, l
+  pretrained: False
+  checkpoint: weights/best_yolov11m_imgsz1280.pt
+
+# 데이터셋 설정
+data:
+  data_yaml: dataset/roboflow/data.yaml
+  img_size: 1280 # 1280
+
+# 학습 설정
+training:
+  epochs: 30 # baseline: 30
+  batch_size: 32 # baseline: 16
+  freeze: 10 # 인튜닝 시 백본 레이어를 얼릴 개수 (보통 10~15가 적당)
+  device: cuda      # cuda, cpu, 0, 1, 2, 3
+  workers: 8
+
+  # Multi-scale training (웹캠 거리 변화 대응)
+  multi_scale: true  # 다양한 입력 크기로 학습 (예: 448~832)
+
+  # YOLO 하이퍼파라미터
+  mosaic: 0.1   # Mosaic 증강 확률 (4개 이미지 합치기)
+  mixup: 0.1   # MixUp 증강 확률 (2개 이미지 블렌딩, 일반화 향상)
+  box: 7.5      # Bounding box loss 가중치
+  cls: 0.5      # Classification loss 가중치
+
+  # 최적화
+  optimizer: AdamW  # AdamW, SGD, Adam
+  lr0: 0.0002 # 0.002        # 초기 학습률 (AdamW는 낮은 lr 권장)
+  lrf: 0.01         # 최종 학습률 (lr0 * lrf)
+  momentum: 0.937   # SGD용 (AdamW에서는 무시됨)
+  weight_decay: 0.0005
+  patience: 10 # Early stopping
+
+  # 저장 설정
+  save_period: -1     # N epoch마다 저장 (-1은 저장 안함, 숫자는 해당 epoch마다 저장)
+  save_dir: outputs
+
+# Weights & Biases 설정
+wandb:
+  enabled: true     # wandb 사용 여부
+  project: PCB_Detection
+  suffix: Finetune      # run name의 뒷부분 (앞에는 자동으로 모델명이 붙음)
+
+# 실험 설정
+experiment:
+  suffix: Finetune  # 실험명 suffix (앞에는 자동으로 모델명이 붙음)
+  seed: 42

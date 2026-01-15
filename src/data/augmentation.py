@@ -1,506 +1,168 @@
-import logging
-from typing import Dict, Any, Optional, List, Union
-from pathlib import Path
-import albumentations as A
-from albumentations.core.transforms_interface import DualTransform
+import os
 import cv2
+import albumentations as A
 import numpy as np
+import pandas as pd
+from pathlib import Path
+from typing import List, Dict, Optional
+from src.utils.utils import setup_logger
+from collections import defaultdict
+from tqdm import tqdm
 
-from src.utils.config import load_config
-from src.utils.utils import setup_logger, get_device
+# Logger setup
+project_root = Path(__file__).resolve().parents[2]  # PCB/
+log_dir = project_root / "logs/augmentation"
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(
+    name="OfflineAugmentation",
+    log_dir=log_dir,
+    log_level="INFO"
+)
 
-# 클래스 이름 매핑
-CLASS_NAMES = {
-    0: "mouse_bite",
-    1: "spur",
-    2: "missing_hole",
-    3: "short",
-    4: "open_circuit",
-    5: "spurious_copper"
-}
-
-
-class ConditionalResize(DualTransform):
+class Augmentor:
     """
-    조건부 Resize Transform
-    원본 이미지 크기가 target size와 같으면 resize를 건너뜁니다.
+    Offline augmentation pipeline using Albumentations.
+    Each class reaches its target count using CSV-based paths.
     """
-
-    def __init__(self, height: int, width: int, always_apply: bool = False, p: float = 1.0):
-        super().__init__(always_apply, p)
-        self.height = height
-        self.width = width
-
-    def apply(self, img: np.ndarray, **params) -> np.ndarray:
-        """이미지에 적용"""
-        h, w = img.shape[:2]
-
-        # 크기가 같으면 resize 건너뛰기
-        if h == self.height and w == self.width:
-            logger.debug(f"Image size matches target ({h}x{w}), skipping resize")
-            return img
-
-        # 크기가 다르면 resize 수행
-        logger.debug(f"Resizing image from {h}x{w} to {self.height}x{self.width}")
-        return cv2.resize(img, (self.width, self.height), interpolation=cv2.INTER_LINEAR)
-
-    def apply_to_bbox(self, bbox, **params):
-        """bbox에 적용 (크기 변경 시에만 스케일 조정)"""
-        h, w = params['rows'], params['cols']
-
-        # 크기가 같으면 bbox도 그대로 반환
-        if h == self.height and w == self.width:
-            return bbox
-
-        # 크기가 다르면 bbox 스케일 조정
-        # YOLO format: [x_center, y_center, width, height] (normalized)
-        # Albumentations는 이미 normalized 좌표를 다루므로 그대로 반환
-        return bbox
-
-    def get_transform_init_args_names(self):
-        return ("height", "width")
-
-
-def get_augmentation_config(config: Dict[str, Any]) -> Dict[str, Any]:
-    return config.get('augmentation', {})
-
-
-def get_train_transforms(
-    img_size: int = 640,
-    augmentation_config: Optional[Dict[str, Any]] = None,
-    pcb_optimized: bool = True
-) -> A.Compose:
-    """
-    학습용 augmentation 파이프라인 생성
-    PCB 데이터에 최적화: 밝기/그림자/회전/반전 중심
-
-    Args:
-        img_size: 이미지 크기
-        augmentation_config: augmentation 설정 딕셔너리
-        pcb_optimized: PCB 데이터에 최적화된 설정 사용 여부
-
-    Returns:
-        albumentations Compose 객체
-    """
-    if augmentation_config is None:
-        augmentation_config = {}
-
-    logger.info(f"Creating train transforms with img_size={img_size}")
-    logger.info(f"PCB optimized mode: {pcb_optimized}")
-    logger.info(f"Augmentation config: {augmentation_config}")
-
-    if pcb_optimized:
-        # PCB 특성에 맞는 augmentation
-        transforms = [
-            # 1. 밝기/대비 조정 (가장 중요 - PCB 조명 환경 시뮬레이션)
-            A.RandomBrightnessContrast(
-                brightness_limit=0.3,  # 밝기 변화 강화
-                contrast_limit=0.3,    # 대비 변화 강화
-                p=0.7  # 높은 확률로 적용
-            ),
-
-            # 2. 그림자/조명 효과 (PCB 검사 환경)
-            A.RandomShadow(
-                shadow_roi=(0, 0.5, 1, 1),  # 그림자 영역
-                num_shadows_limit=(1, 2),   # 그림자 개수
-                shadow_dimension=5,
-                p=0.4
-            ),
-
-            # 3. 회전 (PCB 방향)
-            A.Rotate(
-                limit=augmentation_config.get('degrees', 10),  # 기본 10도
-                border_mode=cv2.BORDER_CONSTANT,
-                value=0,
-                p=0.5
-            ),
-
-            # 4. 좌우 반전 (PCB 좌우 대칭)
-            A.HorizontalFlip(
-                p=augmentation_config.get('fliplr', 0.5)
-            ),
-
-            # 5. 상하 반전 (필요시)
-            A.VerticalFlip(
-                p=augmentation_config.get('flipud', 0.3)
-            ),
-
-            # 6. 이동/스케일 (약간만)
-            A.ShiftScaleRotate(
-                shift_limit=augmentation_config.get('translate', 0.1),
-                scale_limit=augmentation_config.get('scale', 0.1),  # 스케일 변화 줄임
-                rotate_limit=0,  # 회전은 위에서 처리
-                border_mode=cv2.BORDER_CONSTANT,
-                value=0,
-                p=0.5
-            ),
-
-            # 7. 노이즈 (미세한 센서 노이즈)
-            A.OneOf([
-                A.GaussNoise(var_limit=(5.0, 20.0), p=1.0),  # 노이즈 줄임
-                A.ISONoise(color_shift=(0.01, 0.05), intensity=(0.1, 0.3), p=1.0),
-            ], p=0.3),
-
-            # 8. 블러 (초점 문제 시뮬레이션 - 최소화)
-            A.OneOf([
-                A.GaussianBlur(blur_limit=(3, 5), p=1.0),
-                A.MotionBlur(blur_limit=5, p=1.0),
-            ], p=0.2),  # 확률 낮춤
-
-            # 9. 색상 조정 (최소화 - PCB는 주로 녹색/갈색)
-            A.HueSaturationValue(
-                hue_shift_limit=5,   # 색상 변화 최소화
-                sat_shift_limit=10,  # 채도 변화 최소화
-                val_shift_limit=10,  # 명도 변화 최소화
-                p=0.2  # 낮은 확률
-            ),
-
-            # 10. 리사이즈 (조건부 - 크기가 같으면 건너뜀)
-            ConditionalResize(height=img_size, width=img_size, p=1.0),
-        ]
-    else:
-        # 기존 범용 augmentation
-        hsv_h = augmentation_config.get('hsv_h', 0.015)
-        hsv_s = augmentation_config.get('hsv_s', 0.7)
-        hsv_v = augmentation_config.get('hsv_v', 0.4)
-        degrees = augmentation_config.get('degrees', 0.0)
-        translate = augmentation_config.get('translate', 0.1)
-        scale = augmentation_config.get('scale', 0.5)
-        flipud = augmentation_config.get('flipud', 0.0)
-        fliplr = augmentation_config.get('fliplr', 0.5)
-
-        transforms = [
-            A.HueSaturationValue(
-                hue_shift_limit=int(hsv_h * 180),
-                sat_shift_limit=int(hsv_s * 100),
-                val_shift_limit=int(hsv_v * 100),
-                p=0.5
-            ),
-            A.Affine(
-                rotate=(-degrees, degrees) if degrees > 0 else 0,
-                translate_percent={
-                    'x': (-translate, translate),
-                    'y': (-translate, translate)
-                } if translate > 0 else None,
-                scale=(1 - scale, 1 + scale) if scale > 0 else None,
-                p=0.5
-            ),
-            A.VerticalFlip(p=flipud),
-            A.HorizontalFlip(p=fliplr),
-            A.OneOf([
-                A.GaussNoise(var_limit=(10.0, 50.0), p=0.3),
-                A.GaussianBlur(blur_limit=(3, 7), p=0.3),
-                A.MotionBlur(blur_limit=7, p=0.3),
-            ], p=0.3),
-            A.RandomBrightnessContrast(
-                brightness_limit=0.2,
-                contrast_limit=0.2,
-                p=0.3
-            ),
-            ConditionalResize(height=img_size, width=img_size, p=1.0),
-        ]
-
-    # bbox_params 설정 (YOLO 형식)
-    bbox_params = A.BboxParams(
-        format='yolo',
-        min_area=0,
-        min_visibility=0.3,
-        label_fields=['class_labels']
-    )
-
-    return A.Compose(transforms, bbox_params=bbox_params)
-
-
-def get_val_transforms(img_size: int = 640) -> A.Compose:
-    logger.info(f"Creating validation transforms with img_size={img_size}")
-
-    transforms = [
-        # 조건부 리사이즈 (크기가 같으면 건너뜀)
-        ConditionalResize(height=img_size, width=img_size, p=1.0),
-    ]
-
-    # bbox_params 설정 (YOLO 형식)
-    bbox_params = A.BboxParams(
-        format='yolo',
-        min_area=0,
-        min_visibility=0.0,
-        label_fields=['class_labels']
-    )
-
-    return A.Compose(transforms, bbox_params=bbox_params)
-
-
-class AugmentationPipeline:
-    """
-    Data augmentation 파이프라인 클래스
-    train_config.yaml의 augmentation 설정에 따라 동적으로 증강 적용
-    """
-
-    def __init__(
-        self,
-        config_path: Optional[str] = None,
-        config: Optional[Dict[str, Any]] = None,
-        img_size: int = 640,
-        mode: str = 'train',
-        log_dir: Optional[str] = None
-    ):
-        """
-        Args:
-            config_path: 설정 파일 경로
-            config: 설정 딕셔너리 (config_path와 중복 시 이것을 우선 사용)
-            img_size: 이미지 크기
-            mode: 'train' 또는 'val'
-            log_dir: 로그 디렉토리
-        """
+    def __init__(self, img_size: int, save_dir: str, pcb_optimized: bool = True,
+                 normal_class_id: int = -1, class_target_counts: Optional[Dict[int, int]] = None):
         self.img_size = img_size
-        self.mode = mode
+        self.save_dir = Path(save_dir)
+        self.normal_class_id = normal_class_id
+        self.class_target_counts = class_target_counts or {}
+        self.class_aug_counts = defaultdict(int)
 
-        # 로거 설정
-        self.logger = setup_logger(
-            name=f"Augmentation_{mode}",
-            log_dir=log_dir
-        )
+        self.image_dir = self.save_dir / "aug_images"
+        self.label_dir = self.save_dir / "aug_labels"
+        self.image_dir.mkdir(parents=True, exist_ok=True)
+        self.label_dir.mkdir(parents=True, exist_ok=True)
 
-        # 디바이스 설정 (필요시 사용)
-        self.device = get_device(verbose=False)
-        self.logger.info(f"Using device: {self.device}")
+        self.transform = self._build_transforms(pcb_optimized)
 
-        # 설정 로드
-        if config is None and config_path is not None:
-            config = load_config(config_path)
-            self.logger.info(f"Loaded config from {config_path}")
-        elif config is None:
-            config = {}
-            self.logger.warning("No config provided, using default settings")
+        logger.info(f"Offline Augmentor initialized, save_dir={self.save_dir}, img_size={img_size}")
 
-        self.config = config
-        self.augmentation_config = get_augmentation_config(config)
-
-        # 증강 설정 읽기
-        self.enabled = self.augmentation_config.get('enabled', True)
-        self.pcb_optimized = self.augmentation_config.get('pcb_optimized', True)
-        self.exclude_classes = self._process_exclude_classes(
-            self.augmentation_config.get('exclude_classes', [])
-        )
-
-        self.logger.info(f"Augmentation enabled: {self.enabled}")
-        self.logger.info(f"PCB optimized: {self.pcb_optimized}")
-        if self.exclude_classes:
-            exclude_names = [CLASS_NAMES[cls_id] for cls_id in self.exclude_classes]
-            self.logger.info(f"Exclude classes: {exclude_names} (IDs: {list(self.exclude_classes)})")
-
-        # Transform 생성
-        if mode == 'train' and self.enabled:
-            # 학습 모드 + 증강 활성화
-            self.transform = get_train_transforms(
-                img_size=img_size,
-                augmentation_config=self.augmentation_config,
-                pcb_optimized=self.pcb_optimized
-            )
-            # 제외 클래스용 최소 변환 (리사이즈만)
-            self.minimal_transform = get_val_transforms(img_size=img_size)
-            self.logger.info("Created training augmentation pipeline")
+    def _build_transforms(self, pcb_optimized: bool) -> A.Compose:
+        if pcb_optimized:
+            transforms = [
+                A.RandomScale(scale_limit=(-0.5, 0.2), p=0.7),
+                A.PadIfNeeded(min_height=self.img_size, min_width=self.img_size,
+                               border_mode=cv2.BORDER_CONSTANT,
+                               value=lambda: np.random.choice([[255,255,255],[0,0,0],[128,128,128]]), p=0.7),
+                A.RandomBrightnessContrast(0.1, 0.1, p=0.3),
+                A.RandomShadow(shadow_roi=(0,0.5,1,1), p=0.1),
+                A.Rotate(limit=10, border_mode=cv2.BORDER_CONSTANT, fill=0, p=0.2),
+                A.HorizontalFlip(p=0.4),
+                A.VerticalFlip(p=0.3),
+                A.Affine(translate_percent=0.1, scale=(0.9,1.1), border_mode=cv2.BORDER_CONSTANT, fill=0, p=0.3),
+                A.GaussNoise(std_range=(0.05,0.2), p=0.2),
+                A.GaussianBlur(blur_limit=(2,5), p=0.2),
+                A.HueSaturationValue(
+                    hue_shift_limit=10,   # 색조 변화 범위 (-10 ~ +10)
+                    sat_shift_limit=30,   # 채도 변화 범위 (-30 ~ +30)
+                    val_shift_limit=20,   # 명도 변화 범위 (-20 ~ +20)
+                    p=0.4                 # 적용 확률
+                ),
+                A.Resize(self.img_size, self.img_size)
+            ]
         else:
-            # 검증 모드 또는 증강 비활성화 → 리사이즈만
-            self.transform = get_val_transforms(img_size=img_size)
-            self.minimal_transform = self.transform
-            if mode == 'train' and not self.enabled:
-                self.logger.info("Augmentation disabled - using minimal transforms only")
-            else:
-                self.logger.info("Created validation augmentation pipeline")
+            transforms = [
+                A.HorizontalFlip(p=0.5),
+                A.Resize(self.img_size, self.img_size)
+            ]
+        return A.Compose(transforms, bbox_params=A.BboxParams(format="yolo", label_fields=["class_labels"], min_visibility=0.3))
 
-    def _process_exclude_classes(
-        self,
-        exclude_classes: Optional[Union[List[str], List[int]]]
-    ) -> set:
-        """
-        제외할 클래스를 클래스 ID set으로 변환
+    def augment_image(self, image_path: str, bboxes: List[List[float]], class_labels: List[int], base_name: str, target_classes: List[int]) -> Dict[int,int]:
+        created_per_class = defaultdict(int)
+        unique_classes = set(class_labels)
+        if unique_classes == {self.normal_class_id}:
+            return created_per_class
 
-        Args:
-            exclude_classes: 클래스 이름 또는 ID 리스트
+        image = cv2.imread(str(image_path))
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        Returns:
-            클래스 ID set
-        """
-        if not exclude_classes:
-            return set()
+        # Only augment classes that still need images
+        needed_classes = [c for c in unique_classes if c in target_classes and self.class_aug_counts[c] < self.class_target_counts.get(c,0)]
+        if not needed_classes:
+            return created_per_class
 
-        exclude_ids = set()
-        for cls in exclude_classes:
-            if isinstance(cls, int):
-                # 클래스 ID인 경우
-                if cls in CLASS_NAMES:
-                    exclude_ids.add(cls)
-                else:
-                    self.logger.warning(f"Unknown class ID: {cls}")
-            elif isinstance(cls, str):
-                # 클래스 이름인 경우
-                found = False
-                for cls_id, cls_name in CLASS_NAMES.items():
-                    if cls_name == cls:
-                        exclude_ids.add(cls_id)
-                        found = True
-                        break
-                if not found:
-                    self.logger.warning(f"Unknown class name: {cls}")
-            else:
-                self.logger.warning(f"Invalid class type: {type(cls)}")
+        # Max number of augmentation attempts based on remaining counts
+        max_remaining = max([self.class_target_counts[c] - self.class_aug_counts[c] for c in needed_classes])
 
-        return exclude_ids
+        aug_idx = 0
+        while any(self.class_aug_counts[c] < self.class_target_counts.get(c,0) for c in needed_classes) and aug_idx < max_remaining*2:
+            augmented = self.transform(image=image, bboxes=bboxes, class_labels=class_labels)
+            aug_img, aug_bboxes, aug_labels = augmented["image"], augmented["bboxes"], augmented["class_labels"]
+            aug_classes_in_img = set(aug_labels)
 
-    def __call__(
-        self,
-        image,
-        bboxes: Optional[List] = None,
-        class_labels: Optional[List] = None
-    ) -> Dict[str, Any]:
-        """
-        이미지와 bbox에 augmentation 적용
-        exclude_classes에 포함된 클래스는 최소 변환만 적용
+            saved = False
+            for c in aug_classes_in_img:
+                if c in needed_classes and c != self.normal_class_id and self.class_aug_counts[c] < self.class_target_counts[c]:
+                    img_name = f"aug_{base_name}_cls{c}_idx{aug_idx}.jpg"
+                    label_name = f"aug_{base_name}_cls{c}_idx{aug_idx}.txt"
+                    cv2.imwrite(str(self.image_dir / img_name), cv2.cvtColor(aug_img, cv2.COLOR_RGB2BGR))
+                    self._save_yolo_label(self.label_dir / label_name, aug_bboxes, aug_labels)
+                    self.class_aug_counts[c] += 1
+                    created_per_class[c] += 1
+                    saved = True
+            if not saved:
+                break
+            aug_idx += 1
 
-        Args:
-            image: 입력 이미지 (numpy array or path)
-            bboxes: bounding boxes (YOLO 형식: [x_center, y_center, width, height])
-            class_labels: 클래스 레이블
+        return created_per_class
 
-        Returns:
-            변환된 이미지와 bbox를 포함한 딕셔너리
-        """
-        # 이미지 로드 (경로인 경우)
-        if isinstance(image, (str, Path)):
-            image = cv2.imread(str(image))
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-        # bbox가 없는 경우 (classification 등)
-        if bboxes is None:
-            transformed = self.transform(image=image)
-            return transformed
-
-        # bbox가 있는 경우 (object detection)
-        if class_labels is None:
-            class_labels = [0] * len(bboxes)
-
-        # exclude_classes 체크: 이미지에 제외 클래스만 있는 경우 최소 변환
-        if self.exclude_classes and self.mode == 'train':
-            image_classes = set(class_labels)
-            # 모든 클래스가 제외 대상인 경우
-            if image_classes.issubset(self.exclude_classes):
-                try:
-                    transformed = self.minimal_transform(
-                        image=image,
-                        bboxes=bboxes,
-                        class_labels=class_labels
-                    )
-                    return transformed
-                except Exception as e:
-                    self.logger.error(f"Minimal transform failed: {e}")
-                    return {
-                        'image': image,
-                        'bboxes': bboxes,
-                        'class_labels': class_labels
-                    }
-
-        # 일반 augmentation 적용
-        try:
-            transformed = self.transform(
-                image=image,
-                bboxes=bboxes,
-                class_labels=class_labels
-            )
-            return transformed
-        except Exception as e:
-            self.logger.error(f"Augmentation failed: {e}")
-            # 실패 시 원본 반환
-            return {
-                'image': image,
-                'bboxes': bboxes,
-                'class_labels': class_labels
-            }
-
-    def get_yolo_format_params(self) -> Dict[str, Any]:
-        if not self.augmentation_config:
-            self.logger.info("No augmentation config, returning empty params")
-            return {}
-
-        # YOLOv8/v11이 지원하는 파라미터로 변환
-        yolo_params = {}
-
-        # HSV 증강
-        if 'hsv_h' in self.augmentation_config:
-            yolo_params['hsv_h'] = self.augmentation_config['hsv_h']
-        if 'hsv_s' in self.augmentation_config:
-            yolo_params['hsv_s'] = self.augmentation_config['hsv_s']
-        if 'hsv_v' in self.augmentation_config:
-            yolo_params['hsv_v'] = self.augmentation_config['hsv_v']
-
-        # 기하학적 변환
-        if 'degrees' in self.augmentation_config:
-            yolo_params['degrees'] = self.augmentation_config['degrees']
-        if 'translate' in self.augmentation_config:
-            yolo_params['translate'] = self.augmentation_config['translate']
-        if 'scale' in self.augmentation_config:
-            yolo_params['scale'] = self.augmentation_config['scale']
-
-        # 반전
-        if 'flipud' in self.augmentation_config:
-            yolo_params['flipud'] = self.augmentation_config['flipud']
-        if 'fliplr' in self.augmentation_config:
-            yolo_params['fliplr'] = self.augmentation_config['fliplr']
-
-        # Mosaic (YOLOv8 특화)
-        if 'mosaic' in self.augmentation_config:
-            yolo_params['mosaic'] = self.augmentation_config['mosaic']
-
-        self.logger.info(f"YOLO augmentation params: {yolo_params}")
-        return yolo_params
-
-
-def create_augmentation_pipeline(
-    config_path: str = "configs/train_config.yaml",
-    img_size: int = 640,
-    mode: str = 'train',
-    log_dir: Optional[str] = None
-) -> AugmentationPipeline:
-    return AugmentationPipeline(
-        config_path=config_path,
-        img_size=img_size,
-        mode=mode,
-        log_dir=log_dir
-    )
-
+    def _save_yolo_label(self, label_path: Path, bboxes: List[List[float]], labels: List[int]):
+        with open(label_path, "w") as f:
+            for cls, bbox in zip(labels, bboxes):
+                bbox_str = " ".join([f"{x:.6f}" for x in bbox])
+                f.write(f"{cls} {bbox_str}\n")
 
 if __name__ == "__main__":
-    """
-    사용 예시
-    """
-    import numpy as np
+    import argparse
+    from collections import defaultdict
 
-    # 설정 로드 및 파이프라인 생성
-    pipeline = create_augmentation_pipeline(
-        config_path="configs/train_config.yaml",
-        img_size=640,
-        mode='train'
-    )
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--csv_path", type=str, required=True, help="CSV file with image_path, label_path, class_id")
+    parser.add_argument("--img_size", type=int, default=640)
+    parser.add_argument("--save_dir", type=str, default="dataset/roboflow/train")
+    args = parser.parse_args()
+    df = pd.read_csv(args.csv_path)
 
-    # 테스트 이미지 생성
-    test_image = np.random.randint(0, 255, (640, 640, 3), dtype=np.uint8)
-    test_bboxes = [[0.5, 0.5, 0.2, 0.2]]  # [x_center, y_center, width, height]
-    test_labels = [0]
+    # Set target augmentation per class
+    class_target_counts = {0:100, 1:100, 2:100, 3:100, 4:100, 5:100}
+    augmentor = Augmentor(img_size=args.img_size, save_dir=args.save_dir, normal_class_id=-1, class_target_counts=class_target_counts)
 
-    # Augmentation 적용
-    result = pipeline(
-        image=test_image,
-        bboxes=test_bboxes,
-        class_labels=test_labels
-    )
+    original_train_count = len(df[df['split']=='train']) if 'split' in df.columns else len(df)
 
-    print("Augmentation result:")
-    print(f"Image shape: {result['image'].shape}")
-    print(f"Bboxes: {result['bboxes']}")
-    print(f"Labels: {result['class_labels']}")
+    for cls in class_target_counts.keys():
+        cls_rows = []
+        for _, row in df.iterrows():
+            label_path = row['label_path']
+            with open(label_path, 'r') as f:
+                class_labels = [int(line.strip().split()[0]) for line in f.readlines()]
+            if cls in class_labels:
+                cls_rows.append(row)
+        logger.info(f"Class {cls}: {len(cls_rows)} images containing this class")
+        np.random.shuffle(cls_rows)
+        for row in cls_rows:
+            image_path = row['image_path']
+            label_path = row['label_path']
+            base_name = Path(image_path).stem
+            with open(label_path, 'r') as f:
+                lines = f.readlines()
+                bboxes = [[float(x) for x in line.strip().split()[1:]] for line in lines]
+                class_labels = [int(line.strip().split()[0]) for line in lines]
+            augmentor.augment_image(image_path=image_path, bboxes=bboxes, class_labels=class_labels, base_name=base_name, target_classes=[cls])
+            if augmentor.class_aug_counts[cls] >= class_target_counts[cls]:
+                break
 
-    # YOLO 형식 파라미터 출력
-    yolo_params = pipeline.get_yolo_format_params()
-    print(f"\nYOLO augmentation params: {yolo_params}")
+    # Summary log
+    logger.info("\n===== Offline Augmentation Summary =====")
+    total_aug = 0
+    for cls, target in class_target_counts.items():
+        count = augmentor.class_aug_counts.get(cls,0)
+        total_aug += count
+        logger.info(f"Class {cls}: augmented {count} images (target: {target})")
+    logger.info(f"Original train images: {original_train_count}")
+    logger.info(f"Total images after augmentation: {original_train_count + total_aug}")
+
+    print("✅ Offline augmentation finished")
