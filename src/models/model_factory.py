@@ -101,36 +101,31 @@ class ModelFactory:
     @classmethod
     def _download_to_weights(cls, model_type: str, size: str) -> None:
         """weights 폴더에 모델 다운로드"""
-        import shutil
         import os
-        import tempfile
 
         model_name = f"{model_type}{size}.pt"
-        weights_dir = Path("weights")
+        weights_dir = Path("weights").resolve()
         weights_dir.mkdir(parents=True, exist_ok=True)
         weights_path = weights_dir / model_name
 
         logger.info(f"Downloading {model_name} to {weights_dir}/")
 
-        # 임시 디렉토리에 다운로드 후 복사
-        with tempfile.TemporaryDirectory() as temp_dir:
-            original_dir = os.getcwd()
-            os.chdir(temp_dir)
+        # weights 폴더로 이동하여 다운로드
+        original_dir = os.getcwd()
+        try:
+            os.chdir(weights_dir)
+            logger.info(f"Changed to weights directory: {weights_dir}")
 
-            try:
-                # YOLO가 임시 디렉토리에 다운로드
-                logger.info(f"Downloading to temporary directory: {temp_dir}")
-                temp_model = YOLO(model_name)
+            # YOLO가 현재 디렉토리(weights/)에 다운로드
+            YOLO(model_name)
 
-                # 다운로드된 파일을 weights 폴더로 복사
-                temp_file = Path(temp_dir) / model_name
-                if temp_file.exists():
-                    shutil.copy2(temp_file, weights_path)
-                    logger.info(f"Successfully downloaded and copied to {weights_path}")
-                else:
-                    raise FileNotFoundError(f"Downloaded file not found in {temp_dir}")
-            finally:
-                os.chdir(original_dir)
+            if weights_path.exists():
+                logger.info(f"Successfully downloaded to {weights_path}")
+            else:
+                raise FileNotFoundError(f"Download failed: {model_name} not found in {weights_dir}")
+        finally:
+            os.chdir(original_dir)
+            logger.info(f"Restored to original directory: {original_dir}")
 
     @classmethod
     def _get_model_name(cls, model_type: str, size: str, pretrained: bool) -> str:
@@ -160,10 +155,11 @@ class ModelFactory:
                 logger.info(f"Found weights (alternative name): {alt_weights_path}")
                 return str(alt_weights_path)
 
-            # 둘 다 없으면 모델 이름만 반환 (YOLO가 자동 다운로드)
+            # 둘 다 없으면 weights/ 폴더에 다운로드
             logger.warning(f"Weights not found in weights/ folder: {model_name}")
-            logger.info(f"Will download from Ultralytics hub automatically...")
-            return model_name
+            logger.info(f"Downloading to weights/ folder...")
+            cls._download_to_weights(model_type, size)
+            return str(weights_path)
         else:
             return f"{model_type}{size}.yaml"
 
@@ -171,22 +167,6 @@ class ModelFactory:
     def get_supported_models(cls) -> Dict[str, list]:
         """지원하는 모델 목록 반환"""
         return cls.SUPPORTED_MODELS.copy()
-
-
-# 편의 함수들
-def create_yolov5(size: str = 'n', pretrained: bool = True) -> YOLO:
-    """YOLOv5 모델 생성"""
-    return ModelFactory.create_model('yolov5', size, pretrained)
-
-
-def create_yolov8(size: str = 'n', pretrained: bool = True) -> YOLO:
-    """YOLOv8 모델 생성"""
-    return ModelFactory.create_model('yolov8', size, pretrained)
-
-
-def create_yolov11(size: str = 'n', pretrained: bool = True) -> YOLO:
-    """YOLOv11 모델 생성"""
-    return ModelFactory.create_model('yolov11', size, pretrained)
 
 
 if __name__ == "__main__":
@@ -214,14 +194,6 @@ if __name__ == "__main__":
             logger.info(f"Successfully created via ModelFactory.")
             logger.info("Model info:")
             logger.info(get_model_info(model))
-
-            # 편의 함수 사용 (해당하는 경우)
-            if model_type == 'yolov8':
-                model_from_func = create_yolov8(model_size)
-                logger.info(f"Successfully created via create_yolov8('{model_size}').")
-            elif model_type == 'yolov5':
-                model_from_func = create_yolov5(model_size)
-                logger.info(f"Successfully created via create_yolov5('{model_size}').")
 
         except Exception as e:
             logger.error(f"Failed to create {model_type}{model_size}: {e}")
