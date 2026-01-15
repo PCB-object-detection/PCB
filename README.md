@@ -168,7 +168,7 @@ python scripts/download_kaggle.py
 ### 학습
 
 ```bash
-python src/training/train.py --config configs/train_config.yaml
+python src/training/train.py --config configs/config.yaml
 ```
 
 ### 추론
