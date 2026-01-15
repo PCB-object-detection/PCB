@@ -33,6 +33,7 @@ share/python-wheels/
 # VSCode & claude
 .vscode/
 .claude/
+CLAUDE.md
 
 # macOS
 .DS_Store
