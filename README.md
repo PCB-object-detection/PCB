@@ -39,7 +39,7 @@
 | **👥 Type** | 팀 프로젝트 |
 | **🎯 Goal** | PCB 보드 결함 실시간 검출 시스템 구축 |
 | **🔧 Tech Stack** | PyTorch, YOLO, ONNX, Streamlit, OpenCV |
-| **📊 Dataset** | [Kaggle PCB Defect Dataset](https://www.kaggle.com/datasets/norbertelter/pcb-defect-dataset) |
+| **📊 Dataset** | [Kaggle PCB Defect Dataset](https://www.kaggle.com/datasets/norbertelter/pcb-defect-dataset), https://app.roboflow.com/cnn-38lvj/team6_pcb_merge_data/3 (최종) |
 
 <br>
 
@@ -62,7 +62,9 @@
 
 ### 📹 모델 추론 데모
 
-**⬇️ 여기에 비디오 파일을 드래그 앤 드롭하세요 ⬇️**
+
+https://github.com/user-attachments/assets/584b2d1e-902e-4da7-9f7f-541dff8dabf9
+
 
 </div>
 
