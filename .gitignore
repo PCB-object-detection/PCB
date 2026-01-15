@@ -42,6 +42,7 @@ CLAUDE.md
 
 # 데이터셋 (큰 파일들)
 dataset/*
+*.pdf
 
 # 모델 가중치 및 체크포인트
 weights/
