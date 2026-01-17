@@ -51,7 +51,6 @@
 - [모델 아키텍처](#-모델-아키텍처)
 - [설치 방법](#-설치-방법)
 - [사용 방법](#-사용-방법)
-- [실험 결과](#-실험-결과)
 - [프로젝트 구조](#-프로젝트-구조)
 
 <br>
@@ -198,18 +197,8 @@ python src/models/export_onnx.py --weights weights/best.pt
 ### Streamlit 데모 실행
 
 ```bash
-streamlit run streamlit_app/app.py
+streamlit run src/app/app.py
 ```
-
-<br>
-
-## 📈 실험 결과
-
-| Model | mAP@0.5 | mAP@0.5:0.95 | Inference Time |
-|:------|:--------|:-------------|:---------------|
-| YOLOv8n | - | - | - ms |
-| YOLOv8s | - | - | - ms |
-| YOLOv8m | - | - | - ms |
 
 <br>
 
@@ -226,6 +215,7 @@ PCB/
 │   └── kaggle/          # 원본 Kaggle 데이터 (optional)
 │
 ├── src/                 # 소스 코드
+│   ├── app/            # Streamlit 데모
 │   ├── data/           # 데이터 로딩/전처리 (augmentation)
 │   ├── models/         # 모델 정의 (ModelFactory)
 │   ├── training/       # 학습 스크립트
@@ -239,13 +229,17 @@ PCB/
 ├── outputs/            # 학습 결과 (weights, logs)
 ├── logs/               # 학습 로그
 ├── onnx_models/        # ONNX 모델
-├── streamlit_app/      # Streamlit 데모
 ├── scripts/            # 유틸리티 스크립트
 └── notebooks/          # Jupyter 노트북
 ```
 
 <br>
 
+## 📄 상세 문서
+
+프로젝트 진행 과정 및 실험 결과는 [Notion](https://www.notion.so/Object-Detection-2eb784f521018032b072fbee60e6028b)를 참고해주세요.
+
+<br>
 
 ## 📝 License
 
