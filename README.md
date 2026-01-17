@@ -39,7 +39,7 @@
 | **👥 Type** | 팀 프로젝트 |
 | **🎯 Goal** | PCB 보드 결함 실시간 검출 시스템 구축 |
 | **🔧 Tech Stack** | PyTorch, YOLO, ONNX, Streamlit, OpenCV |
-| **📊 Dataset** | [Kaggle PCB Defect Dataset](https://www.kaggle.com/datasets/norbertelter/pcb-defect-dataset), https://app.roboflow.com/cnn-38lvj/team6_pcb_merge_data/3 (최종) |
+| **📊 Dataset** | [Kaggle PCB Defect Dataset](https://www.kaggle.com/datasets/norbertelter/pcb-defect-dataset), [Roboflow PCB Dataset](https://app.roboflow.com/cnn-38lvj/team6_pcb_merge_data/3) (최종) |
 
 <br>
 
@@ -109,25 +109,25 @@ PCB(Printed Circuit Board) 제조 공정에서 발생하는 다양한 결함을 
 
 ```
 dataset/
-├── raw/                    # 원본 Kaggle 데이터
-│   ├── train/             # 원본 학습 데이터
+├── roboflow/              # Primary dataset (Roboflow format)
+│   ├── train/             # 학습 데이터 (증강 데이터 포함)
 │   │   ├── images/
 │   │   └── labels/
-│   ├── val/               # 원본 검증 데이터
+│   ├── valid/
 │   │   ├── images/
 │   │   └── labels/
-│   ├── test/              # 원본 테스트 데이터
+│   ├── test/
 │   │   ├── images/
 │   │   └── labels/
 │   └── data.yaml          # YOLO 데이터셋 설정
-└── aug/                    # 증강된 데이터 (Data Augmentation)
+└── kaggle/                 # 원본 Kaggle 데이터 (optional)
 ```
 
 <br>
 
 ## 🏗️ 모델 아키텍처
 
-- **Base Model**: YOLOv8/YOLOv11
+- **Base Model**: YOLOv5/YOLOv8/YOLOv11 (n/s/m/l 사이즈 지원)
 - **Backbone**: CSPDarknet
 - **Framework**: Ultralytics
 - **Export Format**: ONNX Runtime
@@ -170,13 +170,23 @@ python scripts/download_kaggle.py
 ### 학습
 
 ```bash
-python src/training/train.py --config configs/config.yaml
+# 전체 파이프라인 (학습 + 평가)
+python main.py --mode pipeline
+
+# 학습만 실행
+python main.py --mode train
+
+# 평가만 실행 (best weights 자동 탐지)
+python main.py --mode eval
+
+# 특정 weights로 평가
+python main.py --mode eval --weights path/to/weights.pt
 ```
 
 ### 추론
 
 ```bash
-python src/inference/predict.py --weights weights/best.pt --source dataset/test
+python src/inference/predict.py --weights weights/best.pt --source dataset/test/images/
 ```
 
 ### ONNX 변환
@@ -208,29 +218,30 @@ streamlit run streamlit_app/app.py
 ```
 PCB/
 ├── dataset/              # 데이터셋
-│   ├── raw/             # 원본 Kaggle 데이터
+│   ├── roboflow/        # Primary dataset (Roboflow format)
 │   │   ├── train/      # 학습 데이터 (images, labels)
-│   │   ├── val/        # 검증 데이터
+│   │   ├── valid/      # 검증 데이터
 │   │   ├── test/       # 테스트 데이터
 │   │   └── data.yaml
-│   └── aug/             # 증강된 데이터
+│   └── kaggle/          # 원본 Kaggle 데이터 (optional)
 │
 ├── src/                 # 소스 코드
-│   ├── data/           # 데이터 로딩/전처리
-│   ├── models/         # 모델 정의
+│   ├── data/           # 데이터 로딩/전처리 (augmentation)
+│   ├── models/         # 모델 정의 (ModelFactory)
 │   ├── training/       # 학습 스크립트
 │   ├── evaluation/     # 평가 스크립트
 │   ├── inference/      # 추론 스크립트
 │   └── utils/          # 유틸리티 함수
 │
-├── scripts/            # 유틸리티 스크립트
-├── notebooks/          # Jupyter 노트북
-├── configs/            # 설정 파일
+├── main.py             # CLI 엔트리포인트 (train/eval/pipeline)
+├── configs/            # 설정 파일 (config.yaml)
 ├── weights/            # 모델 가중치
+├── outputs/            # 학습 결과 (weights, logs)
+├── logs/               # 학습 로그
 ├── onnx_models/        # ONNX 모델
-├── outputs/            # 추론 결과
 ├── streamlit_app/      # Streamlit 데모
-└── tests/              # 테스트 코드
+├── scripts/            # 유틸리티 스크립트
+└── notebooks/          # Jupyter 노트북
 ```
 
 <br>
